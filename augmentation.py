@@ -1,11 +1,17 @@
 """
-Paper:
+Paper: "Fast and Accurate Image Super Resolution by Deep CNN with Skip Connection and Network in Network"
+Author: Jin Yamanaka
+Github: https://github.com/jiny2001/dcscn-image-super-resolution
 
-DCSCN: functions for data augmentation
+Create Augmented training images
+
+Put your images under data/[your dataset name]/ and specify [your dataset name] for --dataset.
+
+--augment_level 2-8: will generate flipped / rotated images
+
 """
-import os
-
 import numpy as np
+import os
 import tensorflow as tf
 
 from helper import args, utilty as util
@@ -42,6 +48,7 @@ def main(not_parsed_args):
 			lr_image = np.fliplr(org_image)
 			util.save_image(new_filename + "_h" + extension, lr_image)
 		if FLAGS.augment_level >= 4:
+			lr_image = np.fliplr(org_image)
 			lrud_image = np.flipud(lr_image)
 			util.save_image(new_filename + "_hv" + extension, lrud_image)
 
@@ -53,9 +60,11 @@ def main(not_parsed_args):
 			util.save_image(new_filename + "_r2" + extension, rotated_image2)
 
 		if FLAGS.augment_level >= 7:
+			rotated_image1 = np.rot90(org_image)
 			ud_image = np.flipud(rotated_image1)
 			util.save_image(new_filename + "_r1_v" + extension, ud_image)
 		if FLAGS.augment_level >= 8:
+			rotated_image2 = np.rot90(org_image, -1)
 			ud_image = np.flipud(rotated_image2)
 			util.save_image(new_filename + "_r2_v" + extension, ud_image)
 

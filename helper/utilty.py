@@ -10,11 +10,11 @@ import math
 import os
 import time
 from os import listdir
-from os.path import isfile, join
 
 import numpy as np
 import tensorflow as tf
 from PIL import Image
+from os.path import isfile, join
 from scipy import misc
 
 
@@ -51,6 +51,12 @@ class LoadError(Exception):
 def make_dir(directory):
 	if not os.path.exists(directory):
 		os.makedirs(directory)
+
+
+def delete_dir(directory):
+	if os.path.exists(directory):
+		clean_dir(directory)
+		os.rmdir(directory)
 
 
 def get_files_in_directory(path):
@@ -98,13 +104,8 @@ def set_logging(filename, stream_log_level, file_log_level, tf_log_level):
 
 	tf.logging.set_verbosity(tf_log_level)
 
-	# optimizing logging
-	logging._srcfile = None
-	logging.logThreads = 0
-	logging.logProcesses = 0
 
-
-def save_image(filename, image, print_console=True):
+def save_image(filename, image, print_console=False):
 	if len(image.shape) >= 3 and image.shape[2] == 1:
 		image = image.reshape(image.shape[0], image.shape[1])
 
@@ -128,37 +129,44 @@ def save_image_data(filename, image):
 	print("Saved [%s]" % filename)
 
 
-def convert_rgb_to_y(image, jpeg_mode=True, max_value=255.0):
+def convert_rgb_to_y(image):
 	if len(image.shape) <= 2 or image.shape[2] == 1:
 		return image
 
-	if jpeg_mode:
-		xform = np.array([[0.299, 0.587, 0.114]])
-		y_image = image.dot(xform.T)
-	else:
-		xform = np.array([[65.481 / 256.0, 128.553 / 256.0, 24.966 / 256.0]])
-		y_image = image.dot(xform.T) + (16.0 * max_value / 256.0)
+	xform = np.array([[65.738 / 256.0, 129.057 / 256.0, 25.064 / 256.0]])
+	y_image = image.dot(xform.T) + 16.0
 
 	return y_image
 
 
-def convert_rgb_to_ycbcr(image, jpeg_mode=True, max_value=255):
+def convert_rgb_to_ycbcr(image):
 	if len(image.shape) < 2 or image.shape[2] == 1:
 		return image
 
-	if jpeg_mode:
-		xform = np.array([[0.299, 0.587, 0.114], [-0.169, - 0.331, 0.500], [0.500, - 0.419, - 0.081]])
-		ycbcr_image = image.dot(xform.T)
-		ycbcr_image[:, :, [1, 2]] += max_value / 2
-	else:
-		xform = np.array(
-			[[65.481 / 256.0, 128.553 / 256.0, 24.966 / 256.0], [- 37.945 / 256.0, - 74.494 / 256.0, 112.439 / 256.0],
-			 [112.439 / 256.0, - 94.154 / 256.0, - 18.285 / 256.0]])
-		ycbcr_image = image.dot(xform.T)
-		ycbcr_image[:, :, 0] += (16.0 * max_value / 256.0)
-		ycbcr_image[:, :, [1, 2]] += (128.0 * max_value / 256.0)
+	xform = np.array(
+		[[65.738 / 256.0, 129.057 / 256.0, 25.064 / 256.0],
+		 [- 37.945 / 256.0, - 74.494 / 256.0, 112.439 / 256.0],
+		 [112.439 / 256.0, - 94.154 / 256.0, - 18.285 / 256.0]])
+
+	ycbcr_image = image.dot(xform.T)
+	ycbcr_image[:, :, 0] += 16.0
+	ycbcr_image[:, :, [1, 2]] += 128.0
 
 	return ycbcr_image
+
+
+def convert_ycbcr_to_rgb(ycbcr_image):
+	rgb_image = np.zeros([ycbcr_image.shape[0], ycbcr_image.shape[1], 3])  # type: np.ndarray
+
+	rgb_image[:, :, 0] = ycbcr_image[:, :, 0] - 16.0
+	rgb_image[:, :, [1, 2]] = ycbcr_image[:, :, [1, 2]] - 128.0
+	xform = np.array(
+		[[298.082 / 256.0, 0, 408.583 / 256.0],
+		 [298.082 / 256.0, -100.291 / 256.0, -208.120 / 256.0],
+		 [298.082 / 256.0, 516.412 / 256.0, 0]])
+	rgb_image = rgb_image.dot(xform.T)
+
+	return rgb_image
 
 
 def convert_y_and_cbcr_to_rgb(y_image, cbcr_image, jpeg_mode=True, max_value=255.0):
@@ -172,26 +180,7 @@ def convert_y_and_cbcr_to_rgb(y_image, cbcr_image, jpeg_mode=True, max_value=255
 	ycbcr_image[:, :, 0] = y_image[:, :, 0]
 	ycbcr_image[:, :, 1:3] = cbcr_image[:, :, 0:2]
 
-	return convert_ycbcr_to_rgb(ycbcr_image, jpeg_mode=jpeg_mode, max_value=max_value)
-
-
-def convert_ycbcr_to_rgb(ycbcr_image, jpeg_mode=True, max_value=255.0):
-	rgb_image = np.zeros([ycbcr_image.shape[0], ycbcr_image.shape[1], 3])  # type: np.ndarray
-
-	if jpeg_mode:
-		rgb_image[:, :, [1, 2]] = ycbcr_image[:, :, [1, 2]] - (128.0 * max_value / 256.0)
-		xform = np.array([[1, 0, 1.402], [1, - 0.344, - 0.714], [1, 1.772, 0]])
-		rgb_image = rgb_image.dot(xform.T)
-	else:
-		rgb_image[:, :, 0] = ycbcr_image[:, :, 0] - (16.0 * max_value / 256.0)
-		rgb_image[:, :, [1, 2]] = ycbcr_image[:, :, [1, 2]] - (128.0 * max_value / 256.0)
-		xform = np.array(
-			[[max_value / 219.0, 0, max_value * 0.701 / 112.0],
-			 [max_value / 219, - max_value * 0.886 * 0.114 / (112 * 0.587), - max_value * 0.701 * 0.299 / (112 * 0.587)],
-			 [max_value / 219.0, max_value * 0.886 / 112.0, 0]])
-		rgb_image = rgb_image.dot(xform.T)
-
-	return rgb_image
+	return convert_ycbcr_to_rgb(ycbcr_image)
 
 
 def set_image_alignment(image, alignment):
@@ -207,14 +196,6 @@ def set_image_alignment(image, alignment):
 		image = image[:, :, 0:3]
 
 	return image
-
-
-def resize_image_by_bicubic(image, scale):
-	size = [int(image.shape[0] * scale), int(image.shape[1] * scale)]
-	image = image.reshape(1, image.shape[0], image.shape[1], image.shape[2])
-	tf_image = tf.image.resize_bicubic(image, size=size)
-	image = tf_image.eval()
-	return image.reshape(image.shape[1], image.shape[2], image.shape[3])
 
 
 def resize_image_by_pil(image, scale, resampling_method="bicubic"):
@@ -262,6 +243,10 @@ def load_image(filename, width=0, height=0, channels=0, alignment=0, print_conso
 	if alignment != 0 and ((width % alignment) != 0 or (height % alignment) != 0):
 		raise LoadError("Attributes mismatch")
 
+	# if there is alpha plane, cut it
+	if image.shape[2] >= 4:
+		image = image[:, :, 0:3]
+
 	if print_console:
 		print("Loaded [%s]: %d x %d x %d" % (filename, image.shape[1], image.shape[0], image.shape[2]))
 	return image
@@ -284,7 +269,7 @@ def load_image_data(filename, width=0, height=0, channels=0, alignment=0, print_
 	return image
 
 
-def get_split_images(image, window_size, stride=None, enable_duplicate=True):
+def get_split_images(image, window_size, stride=None, enable_duplicate=False):
 	if len(image.shape) == 3 and image.shape[2] == 1:
 		image = image.reshape(image.shape[0], image.shape[1])
 
@@ -328,6 +313,24 @@ def get_split_images(image, window_size, stride=None, enable_duplicate=True):
 	return windows
 
 
+# divide images with given stride. note return image size may not equal to window size.
+def get_divided_images(image, window_size, stride, min_size=0):
+	h, w = image.shape[:2]
+	divided_images = []
+
+	for y in range(0, h, stride):
+		for x in range(0, w, stride):
+
+			new_h = window_size if y + window_size <= h else h - y
+			new_w = window_size if x + window_size <= w else w - x
+			if new_h < min_size or new_w < min_size:
+				continue
+
+			divided_images.append(image[y:y + new_h, x:x + new_w, :])
+
+	return divided_images
+
+
 def xavier_cnn_initializer(shape, uniform=True):
 	fan_in = shape[0] * shape[1] * shape[2]
 	fan_out = shape[0] * shape[1] * shape[3]
@@ -344,6 +347,33 @@ def he_initializer(shape):
 	n = shape[0] * shape[1] * shape[2]
 	stddev = math.sqrt(2.0 / n)
 	return tf.truncated_normal(shape=shape, stddev=stddev)
+
+
+def upsample_filter(size):
+	factor = (size + 1) // 2
+	if size % 2 == 1:
+		center = factor - 1
+	else:
+		center = factor - 0.5
+	og = np.ogrid[:size, :size]
+
+	return (1 - abs(og[0] - center) / factor) * (1 - abs(og[1] - center) / factor)
+
+
+def get_upscale_filter_size(scale):
+	return 2 * scale - scale % 2
+
+
+def upscale_weight(scale, channels, name="weight"):
+	cnn_size = get_upscale_filter_size(scale)
+
+	initial = np.zeros(shape=[cnn_size, cnn_size, channels, channels], dtype=np.float32)
+	filter_matrix = upsample_filter(cnn_size)
+
+	for i in range(channels):
+		initial[:, :, i, i] = filter_matrix
+
+	return tf.Variable(initial, name=name)
 
 
 def weight(shape, stddev=0.01, name="weight", uniform=False, initializer="stddev"):
@@ -398,6 +428,36 @@ def add_summaries(scope_name, model_name, var, save_stddev=True, save_mean=False
 		tf.summary.histogram(model_name, var)
 
 
+def log_scalar_value(writer, name, value, step):
+	summary = tf.Summary(value=[tf.Summary.Value(tag=name, simple_value=value)])
+	writer.add_summary(summary, step)
+
+
+def log_fcn_output_as_images(image, width, height, filters, model_name, max_outputs=20):
+	"""
+	input tensor should be [ N, H * W * C ]
+	so transform to [ N H W C ] and visualize only first channel
+	"""
+	reshaped_image = tf.reshape(image, [-1, height, width, filters])
+	tf.summary.image(model_name, reshaped_image[:, :, :, :1], max_outputs=max_outputs)
+
+
+def log_cnn_weights_as_images(model_name, weights, max_outputs=20):
+	"""
+	input tensor should be [ W, H, In_Ch, Out_Ch ]
+	so transform to [ In_Ch * Out_Ch, W, H ] and visualize it
+	"""
+	shapes = get_shapes(weights)
+	weights = tf.reshape(weights, [shapes[0], shapes[1], shapes[2] * shapes[3]])
+	weights_transposed = tf.transpose(weights, [2, 0, 1])
+	weights_transposed = tf.reshape(weights_transposed, [shapes[2] * shapes[3], shapes[0], shapes[1], 1])
+	tf.summary.image(model_name, weights_transposed, max_outputs=max_outputs)
+
+
+def get_shapes(input_tensor):
+	return input_tensor.get_shape().as_list()
+
+
 def get_now_date():
 	d = datetime.datetime.today()
 	return "%s/%s/%s %s:%s:%s" % (d.year, d.month, d.day, d.hour, d.minute, d.second)
@@ -412,19 +472,27 @@ def get_loss_image(image1, image2, scale=1.0, border_size=0):
 	if image1.shape[0] != image2.shape[0] or image1.shape[1] != image2.shape[1] or image1.shape[2] != image2.shape[2]:
 		return None
 
-	if image1.dtype == np.uint8:
-		image1 = image1.astype(np.double)
-	if image2.dtype == np.uint8:
-		image2 = image2.astype(np.double)
+	image1 = trim_image_as_file(image1)
+	image2 = trim_image_as_file(image2)
 
 	loss_image = np.multiply(np.square(np.subtract(image1, image2)), scale)
 	loss_image = np.minimum(loss_image, 255.0)
-	loss_image = loss_image[border_size:-border_size, border_size:-border_size, :]
+	if border_size > 0:
+		loss_image = loss_image[border_size:-border_size, border_size:-border_size, :]
 
 	return loss_image
 
 
+def trim_image_as_file(image):
+	image = np.round(image)
+	return np.clip(image, 0, 255)
+
+
 def compute_mse(image1, image2, border_size=0):
+	"""
+	Computes MSE from 2 images.
+	We round it and clip to 0 - 255. Then shave it from 6 + scale.
+	"""
 	if len(image1.shape) == 2:
 		image1 = image1.reshape(image1.shape[0], image1.shape[1], 1)
 	if len(image2.shape) == 2:
@@ -433,33 +501,26 @@ def compute_mse(image1, image2, border_size=0):
 	if image1.shape[0] != image2.shape[0] or image1.shape[1] != image2.shape[1] or image1.shape[2] != image2.shape[2]:
 		return None
 
-	if image1.dtype != np.uint8:
-		image1 = image1.astype(np.int)
-	image1 = image1.astype(np.double)
+	image1 = trim_image_as_file(image1)
+	image2 = trim_image_as_file(image2)
 
-	if image2.dtype != np.uint8:
-		image2 = image2.astype(np.int)
-	image2 = image2.astype(np.double)
+	diff = np.subtract(image1, image2)
+	if border_size > 0:
+		diff = diff[border_size:-border_size, border_size:-border_size, :]
+	mse = np.mean(np.square(diff))
 
-	mse = 0.0
-	for i in range(border_size, image1.shape[0] - border_size):
-		for j in range(border_size, image1.shape[1] - border_size):
-			for k in range(image1.shape[2]):
-				error = image1[i, j, k] - image2[i, j, k]
-				mse += error * error
-
-	return mse / ((image1.shape[0] - 2 * border_size) * (image1.shape[1] - 2 * border_size) * image1.shape[2])
+	return mse
 
 
 def print_filter_weights(tensor):
 	print("Tensor[%s] shape=%s" % (tensor.name, str(tensor.get_shape())))
-	weight = tensor.eval()
-	for i in range(weight.shape[3]):
+	weight_value = tensor.eval()
+	for i in range(weight_value.shape[3]):
 		values = ""
-		for x in range(weight.shape[0]):
-			for y in range(weight.shape[1]):
-				for c in range(weight.shape[2]):
-					values += "%2.3f " % weight[y][x][c][i]
+		for x in range(weight_value.shape[0]):
+			for y in range(weight_value.shape[1]):
+				for c in range(weight_value.shape[2]):
+					values += "%2.3f " % weight_value[y][x][c][i]
 		print(values)
 	print("\n")
 
@@ -505,3 +566,28 @@ def print_num_of_total_parameters(output_detail=False, output_to_logging=False):
 		if output_detail:
 			print(parameters_string)
 		print("Total %d variables, %s params" % (len(tf.trainable_variables()), "{:,}".format(total_parameters)))
+
+
+def flip(image, flip_type, invert=False):
+	if flip_type == 0:
+		return image
+	elif flip_type == 1:
+		return np.flipud(image)
+	elif flip_type == 2:
+		return np.fliplr(image)
+	elif flip_type == 3:
+		return np.flipud(np.fliplr(image))
+	elif flip_type == 4:
+		return np.rot90(image, 1 if invert is False else -1)
+	elif flip_type == 5:
+		return np.rot90(image, -1 if invert is False else 1)
+	elif flip_type == 6:
+		if invert is False:
+			return np.flipud(np.rot90(image))
+		else:
+			return np.rot90(np.flipud(image), -1)
+	elif flip_type == 7:
+		if invert is False:
+			return np.flipud(np.rot90(image, -1))
+		else:
+			return np.rot90(np.flipud(image), 1)

@@ -6,6 +6,8 @@ output/
 graphs/
 batch_data/
 tf_log/
+data/yang_bsd_8
+data/div2k
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -112,3 +114,11 @@ ENV/
 \.idea/
 
 log\.txt
+
+tf_log_archive/
+
+data/yang_bsd/
+data/yang_bsd_8/
+data/div2k/
+data/div2k_y/
+data/bsd200_y/
